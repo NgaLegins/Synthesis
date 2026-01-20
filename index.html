@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALTER EGO - Glimmers vs Triggers</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: black; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #start-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            background: black; color: white; z-index: 9999; cursor: pointer;
+            font-family: 'Helvetica', sans-serif; letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <div style="text-align:center;">
+            <h1 style="font-weight: 100; margin-bottom: 20px;">ALTER EGO</h1>
+            <p style="font-size: 0.8rem; color: #888;">TOCCA PER INIZIARE</p>
+        </div>
+    </div>
+
+    <canvas id="hydra-canvas"></canvas>
+
+    <script src="https://unpkg.com/hydra-synth"></script>
+    <script src="https://unpkg.com/tone"></script>
+
+    <script>
+        // 1. Inizializzazione Hydra
+        const hydra = new Hydra({
+            canvas: document.getElementById("hydra-canvas"),
+            detectAudio: false // Lo gestiamo noi con Tone.js
+        })
+
+        let stress = 0
+        let triggerVisivo = 0
+
+        // 2. Funzione di avvio
+        document.getElementById('start-screen').onclick = async () => {
+            await Tone.start()
+            setupAudio()
+            Tone.Transport.start()
+            document.getElementById('start-screen').remove()
+        }
+
+        function setupAudio() {
+            const crusher = new Tone.BitCrusher(4).toDestination()
+            const dist = new Tone.Distortion(0.5).connect(crusher)
+            const verb = new Tone.Reverb({ decay: 4, wet: 0.4 }).connect(dist)
+            const delay = new Tone.PingPongDelay("8n", 0.3).connect(verb)
+            const synth = new Tone.PolySynth(Tone.FMSynth, {
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.1, decay: 0.2, sustain: 0.2, release: 1.5 }
+            }).connect(delay)
+
+            const seq = new Tone.Sequence((time, note) => {
+                if (note) {
+                    triggerVisivo = 1 
+                    synth.set({ detune: stress * 1200 * (Math.random() > 0.5 ? 1 : -1) })
+                    synth.triggerAttackRelease(note, "16n", time)
+                }
+            }, ["C5", "E6", "G4", null, "B4", "C6", "B4", "G4", "E4", null, "G3", "C4"], "8n").start(0)
+
+            Tone.Transport.bpm.value = 50
+        }
+
+        // 3. Logica Hydra (il tuo script)
+        update = () => {
+            stress = (-Math.cos(time * 0.05) * 0.5) + 0.5
+            if(window.Tone && Tone.Transport.state === "started") {
+                Tone.Transport.bpm.value = 50 + (stress * 70)
+            }
+            triggerVisivo *= (0.96 - (stress * 0.1))
+        }
+
+        noise(() => 2 + (stress * 10) + (triggerVisivo * 5)) 
+            .colorama(() => stress * 5)
+            .posterize(() => 12 - (stress * 10)) 
+            .kaleid(() => 2 + (stress * 18))
+            .mask(
+                shape(100, () => 0.1 + (triggerVisivo * 0.4), 0.5)
+                .modulateScale(noise(1, 0.5), () => stress * 2)
+            )
+            .modulateScale(
+                osc(10, 0.1).kaleid(20),
+                () => triggerVisivo * stress * 0.5
+            )
+            .scale(() => 1 + (triggerVisivo * 0.2)) 
+            .saturate(() => 0.5 + (stress * 5))
+            .contrast(() => 1 + (stress * 1.5))
+            .invert(() => (stress > 0.9 && triggerVisivo > 0.7) ? 1 : 0)
+            .out(o0)
+
+    </script>
+</body>
+</html>
