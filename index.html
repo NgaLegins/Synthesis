@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Hydra + ToneJS Visualization</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #000;
+      overflow: hidden;
+      font-family: monospace;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      z-index: 10;
+      cursor: pointer;
+      flex-direction: column;
+    }
+    #overlay h1 {
+      font-size: 2rem;
+      pointer-events: none;
+    }
+    #overlay p {
+      font-size: 1rem;
+      opacity: 0.7;
+      pointer-events: none;
+    }
+  </style>
+  
+  <script src="https://unpkg.com/tone"></script>
+  <script src="https://unpkg.com/hydra-synth"></script>
+</head>
+<body>
+
+  <div id="overlay">
+    <h1>CLICCA PER INIZIARE</h1>
+    <p>Audio + Visual Experience</p>
+  </div>
+
+  <script>
+    // --- SETUP HYDRA ---
+    // Inizializza Hydra e lo connette al body
+    const hydra = new Hydra({
+      detectAudio: false,
+      enableStreamCapture: false,
+    });
+
+    // --- VARIABILI DI STATO ---
+    var stress = 0;
+    var triggerVisivo = 0;
+    var isPlaying = false;
+
+    // --- DEFINIZIONE AUDIO ENGINE (Tone.js) ---
+    // Definiamo gli strumenti ma non li avviamo finché l'utente non clicca
+    
+    var crusher = new Tone.BitCrusher(4).toDestination();
+    crusher.wet.value = 0;
+
+    var dist = new Tone.Distortion(0.5).connect(crusher);
+    dist.wet.value = 0;
+
+    var verb = new Tone.Reverb({ decay: 3, wet: 0.4 }).connect(dist);
+    var delay = new Tone.PingPongDelay("16n", 0.3).connect(verb);
+
+    var synth = new Tone.PolySynth(Tone.FMSynth, {
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.1, decay: 0.2, sustain: 0.2, release: 1 }
+    }).connect(delay);
+
+    // Sequenza Note
+    var seq = new Tone.Sequence((time, note) => {
+      if (note) {
+        triggerVisivo = 1; 
+        
+        // Detune
+        var detuneAmount = stress * 1000 * (Math.random() > 0.5 ? 1 : -1);
+        synth.set({ detune: detuneAmount });
+        
+        synth.triggerAttackRelease(note, "16n", time);
+      }
+    }, ["C5", "E6", "G4", null, "B4", "C6", "B4", "G4", "E4", null, "G3", "C4", "C2"], "16n");
+
+    // Impostiamo BPM iniziale
+    Tone.Transport.bpm.value = 50;
+
+    // --- FUNZIONE DI UPDATE ---
+    // Questa funzione aggiorna le variabili ad ogni frame
+    // In Hydra standalone 'time' è una variabile globale accessibile
+    function updateLogic() {
+      if(!isPlaying) return;
+
+      // Logica Stress
+      stress = (-Math.cos(time * 0.02) * 0.5) + 0.5;
+      
+      // Mappatura Audio
+      dist.wet.value = Math.pow(stress, 2);
+      crusher.wet.value = stress > 0.85 ? 1 : 0;
+      Tone.Transport.bpm.value = 50 + (stress * 70);
+      
+      // Mappatura Visiva
+      var decayRate = 0.96 - (stress * 0.1);
+      triggerVisivo *= decayRate;
+    }
+
+    // --- HYDRA VISUAL ---
+    // Inseriamo la logica di update dentro una funzione che Hydra chiama spesso
+    // oppure usiamo un loop esterno. Qui usiamo un trucco: eseguiamo updateLogic() 
+    // all'interno di una delle funzioni modulate, così siamo sicuri che segua il framerate.
+    
+    noise(4)
+      .colorama(10)
+      .posterize(4)
+      .kaleid(5)
+      .mask(
+        shape(4, 10).modulateScale(
+          noise(1,1)
+        )
+      )
+      .mask(shape(300, 1, 2.125))
+      .modulateScale(osc(6, 0.125, 0.3).kaleid(50))
+      .mult(osc(20, 0.05, 2.4).kaleid(50), 0.25)
+      .scale(1.75, 0.2, 0.2)
+      .modulate(noise(0.3))
+      .saturate(3)
+      .posterize(3, 0.4)
+      .scale(1.7) 
+      
+      // --- INIEZIONE LOGICA UPDATE ---
+      // Questo scrollX è invisibile (0) ma ci permette di eseguire updateLogic() ogni frame
+      .scrollX(() => {
+         updateLogic();
+         return 0; 
+      })
+
+      // --- EFFETTI DI SGRETOLAMENTO ---
+      
+      // 1. Noise Displacement
+      .modulate(
+         noise(10, 0.1), 
+         () => stress * 0.5 
+      )
+
+      // 2. Stiramento Pixel (Modulate + Osc)
+      .modulate(
+         osc(10, 0.1, 1.5), 
+         () => stress * 0.8 
+      )
+
+      // 3. Interferenza Elettrica
+      .add(
+         osc(50, 0.2, 100).color(1,0,0).kaleid(10),
+         () => Math.pow(stress, 4) * 0.4 
+      )
+
+      // 4. Pixelation
+      .pixelate(
+         () => 2000 / (1 + (stress * 50)), 
+         () => 2000 / (1 + (stress * 50))  
+      )
+
+      // 5. Pulsazione Ritmica
+      .scale(() => 1 + (triggerVisivo * 0.15))
+
+      .out(o0);
+
+    // --- GESTIONE START (CLICK) ---
+    document.getElementById('overlay').addEventListener('click', async () => {
+      await Tone.start();
+      console.log('Audio is ready');
+      
+      // Reset Transport
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      
+      // Riavvia sequenza
+      seq.start(0);
+      Tone.Transport.start();
+      
+      // Nascondi overlay
+      document.getElementById('overlay').style.display = 'none';
+      isPlaying = true;
+    });
+
+  </script>
+</body>
+</html>
